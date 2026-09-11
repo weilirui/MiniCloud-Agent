@@ -1,0 +1,312 @@
+# SPEC.md —— minicloud-agent 模块清单
+
+> 这是整个项目的"设计蓝图"。每个文件都列出了**职责**与**关键依赖**。
+> 在动手写代码前，请逐项确认。修改 SPEC 后再写代码。
+
+---
+
+## 0. 全局约束
+
+- **Python ≥ 3.11**，**Node ≥ 20**。
+- 后端包名统一使用 `minicloud.*` 命名空间，模块导入路径 `app.xxx`（实际包名在 pyproject.toml 中）。
+- 所有外部 IO（LLM / Qdrant / PG）必须支持 **异步**。
+- 配置统一从 `.env` 读取，**禁止在代码里硬编码 API key**。
+- LLM 调用必须支持流式（SSE）和非流式两种模式。
+- 所有工具调用必须记录到 `tool_invocations` 表（可观测 + 回放）。
+- 日志统一用 `structlog`，关键事件（tool call / llm call / mcp spawn）必须记录。
+
+---
+
+## 1. 仓库结构
+
+```
+minicloud-agent/
+├── README.md                       # 项目入口
+├── SPEC.md                         # 本文件
+├── ARCHITECTURE.md                 # 架构详解
+├── docker-compose.yml              # PG + Qdrant + Backend + Frontend
+├── .env.example                    # 环境变量模板
+├── .gitignore
+├── Makefile                        # dev/test/up/down/logs 便捷命令
+│
+├── backend/                        # Python 后端
+├── frontend/                       # React 前端
+├── data/                           # 运行时持久化（git ignore）
+└── docs/                           # 用户文档
+```
+
+---
+
+## 2. backend/ —— 详细模块清单
+
+### 2.1 入口与配置
+
+| 文件 | 职责 |
+|---|---|
+| `backend/pyproject.toml` | 依赖管理（uv/pip 兼容），锁定版本区间 |
+| `backend/Dockerfile` | 多阶段构建，启动 uvicorn |
+| `backend/alembic.ini` | 数据库迁移配置 |
+| `backend/app/main.py` | FastAPI app 工厂，挂载路由、CORS、middleware、lifespan |
+| `backend/app/config.py` | `Settings` 类（pydantic-settings），从 .env 读全部配置 |
+| `backend/app/deps.py` | FastAPI Depends 工厂（DB session / Qdrant client / LLM client） |
+
+### 2.2 app/core/ —— Agent 核心
+
+| 文件 | 职责 | 关键依赖 |
+|---|---|---|
+| `core/llm.py` | OpenAI 兼容 LLM 客户端封装，统一流式/非流式接口 | `openai`, `httpx` |
+| `core/agent.py` | **Agent Loop**：解析 tool_calls → 执行工具 → 把结果回喂 LLM → 循环直到 finish | LangChain `BaseChatModel` |
+| `core/context.py` | 上下文管理：消息裁剪 / 摘要压缩 / token 预算（按模型窗口动态调整） | `tiktoken` 或 model 自带 tokenizer |
+| `core/memory.py` | 记忆抽象：`WorkingMemory`（本会话滑动窗口）+ `LongTermMemory`（PG + Qdrant） | - |
+| `core/prompts.py` | 系统提示词模板（带 Skills 列表 / MCP 工具列表注入） | - |
+
+### 2.3 app/rag/ —— 检索增强生成
+
+| 文件 | 职责 | 关键依赖 |
+|---|---|---|
+| `rag/embeddings.py` | Embedding 客户端（OpenAI 兼容协议，支持 batch） | `openai` |
+| `rag/qdrant_store.py` | Qdrant 客户端封装：collection 管理、CRUD、metadata filter | `qdrant-client` |
+| `rag/chunker.py` | 文档分块：按 token 数 + 重叠，支持 markdown / code / plain | `langchain-text-splitters` |
+| `rag/ingest.py` | 入库流水线：读文件 → 分块 → embedding → 写入 Qdrant | - |
+| `rag/retriever.py` | 检索器：稠密 + 可选 BM25 hybrid，metadata filter | - |
+
+### 2.4 app/skills/ —— Skills 系统
+
+| 文件 | 职责 | 关键依赖 |
+|---|---|---|
+| `skills/base.py` | `Skill` 基类 / `SkillContext`（提供 LLM / RAG / MCP 访问） | pydantic |
+| `skills/registry.py` | 本地 Skills 注册表：扫描内置目录 + 用户自定义目录 | - |
+| `skills/loader.py` | 加载 `SKILL.md` 描述文件（Markdown frontmatter 解析） | `python-frontmatter` |
+| `skills/invoker.py` | 调度器：根据用户输入 / slash command 匹配 Skill 并执行 | - |
+| `skills/builtin/...` | 内置 Skills 目录，每个 Skill 一个子目录 | - |
+
+#### 内置 Skills 列表（首版）
+
+| Skill 名 | 触发词 | 功能 |
+|---|---|---|
+| `code_review` | `/code-review` | 对指定文件做代码审查，输出 diff 建议 |
+| `project_init` | `/init` | 扫描项目结构，生成 `MINICLOUD.md` 项目说明书（类比 CLAUDE.md） |
+| `rag_qa` | `/rag <query>` | 从知识库检索并回答 |
+| `git_status` | `/git` | 查看 git 状态 + 总结 |
+| `web_search` | `/search <q>` | 联网搜索（对接 Tavily/Serper API） |
+
+### 2.5 app/mcp/ —— Model Context Protocol
+
+| 文件 | 职责 | 关键依赖 |
+|---|---|---|
+| `mcp/client.py` | MCP stdio 客户端（spawn 子进程，JSON-RPC over stdio） | `mcp` 官方 Python SDK |
+| `mcp/manager.py` | MCP server 生命周期管理：启动 / 健康检查 / 重启 / 关闭 | - |
+| `mcp/adapter.py` | 把 MCP `tools/list` 转换为 Agent 可消费的 `Tool` 对象 | - |
+| `mcp/config.py` | MCP server 配置加载（从 `mcp.servers.json`） | - |
+| `mcp/servers.example.json` | MCP server 配置示例 | - |
+
+#### 首版预置 MCP server
+
+- `filesystem` —— 官方 `@modelcontextprotocol/server-filesystem`
+- `fetch` —— 官方 fetch server（HTTP GET）
+- `git` —— 官方 git server（可选）
+
+### 2.6 app/db/ —— 数据库模型与访问
+
+| 文件 | 职责 |
+|---|---|
+| `db/base.py` | SQLAlchemy `DeclarativeBase` |
+| `db/session.py` | async engine + `async_sessionmaker` |
+| `db/models.py` | 表模型：`Session`, `Message`, `ToolInvocation`, `KnowledgeDoc`, `UserPreference` |
+| `db/migrations/` | Alembic 自动生成 |
+
+#### 数据模型一览
+
+| 表 | 关键字段 |
+|---|---|
+| `sessions` | id, title, created_at, updated_at, model, system_prompt |
+| `messages` | id, session_id, role, content, tool_calls(jsonb), tool_call_id, created_at |
+| `tool_invocations` | id, message_id, skill_or_tool, args(jsonb), result, duration_ms, status |
+| `knowledge_docs` | id, filename, source_type, qdrant_point_ids, uploaded_at |
+| `user_preferences` | key, value(jsonb), updated_at（KV 表，存默认模型、温度等） |
+
+### 2.7 app/api/ —— HTTP 路由
+
+| 路由前缀 | 文件 | 功能 |
+|---|---|---|
+| `/api/v1/health` | `health.py` | 健康检查（PG/Qdrant 连通性） |
+| `/api/v1/chat` | `chat.py` | `POST /stream`（SSE 流式对话）、`POST /completions` |
+| `/api/v1/sessions` | `sessions.py` | 会话 CRUD：列表、创建、删除、获取历史 |
+| `/api/v1/rag` | `rag.py` | `POST /upload`（上传文件）、`POST /query`（检索）、`DELETE /docs/{id}` |
+| `/api/v1/skills` | `skills.py` | `GET /`（列表）、`GET /{name}`（详情）、`POST /invoke` |
+| `/api/v1/mcp` | `mcp.py` | `GET /servers`、`POST /servers/{name}/restart` |
+
+### 2.8 app/schemas/ —— Pydantic 模型
+
+| 文件 | 内容 |
+|---|---|
+| `chat.py` | `ChatRequest`, `ChatChunk`（SSE 事件类型） |
+| `session.py` | `SessionCreate`, `SessionOut`, `MessageOut` |
+| `rag.py` | `UploadResponse`, `QueryRequest`, `QueryResponse` |
+| `skill.py` | `SkillInfo`, `SkillInvokeRequest` |
+| `mcp.py` | `MCPServerConfig`, `MCPServerStatus` |
+
+### 2.9 app/utils/
+
+| 文件 | 职责 |
+|---|---|
+| `utils/streaming.py` | SSE 响应生成器（`text/event-stream` 格式） |
+| `utils/token_counter.py` | Token 计数（按模型适配） |
+| `utils/logging.py` | structlog 配置 |
+| `utils/errors.py` | 自定义异常 + FastAPI 异常处理器 |
+
+### 2.10 backend/tests/
+
+| 文件 | 覆盖范围 |
+|---|---|
+| `test_agent.py` | Agent loop：tool call 解析、循环退出条件 |
+| `test_rag.py` | 文档分块、embedding、Qdrant 写入、检索 |
+| `test_skills.py` | Skill 注册、加载、调用 |
+| `test_mcp.py` | MCP client 与官方 example server 联通 |
+| `test_api.py` | FastAPI 路由 smoke test |
+
+---
+
+## 3. frontend/ —— 详细模块清单
+
+### 3.1 项目配置
+
+| 文件 | 职责 |
+|---|---|
+| `frontend/package.json` | 依赖：react / vite / tailwind / zustand / react-markdown / highlight.js |
+| `frontend/vite.config.ts` | Vite 配置：dev server 5173、proxy `/api` → backend:8000 |
+| `frontend/tailwind.config.js` | 暗色主题配色 |
+| `frontend/Dockerfile` | 多阶段构建（Node build → nginx serve） |
+| `frontend/index.html` | HTML 入口 |
+| `frontend/nginx.conf` | SPA fallback + API 反代 |
+
+### 3.2 src/
+
+| 文件 | 职责 |
+|---|---|
+| `main.tsx` | ReactDOM 渲染入口 |
+| `App.tsx` | 顶层布局：左会话列表 / 右聊天区 |
+| `api/chat.ts` | SSE 流式客户端（fetch + ReadableStream） |
+| `api/sessions.ts` | 会话 CRUD 客户端 |
+| `api/skills.ts` | Skills 列表/调用客户端 |
+| `api/rag.ts` | 知识库上传/查询客户端 |
+| `store/session.ts` | Zustand store：当前会话、消息列表、流式状态 |
+| `store/skills.ts` | Zustand store：可用 Skills |
+| `components/ChatWindow.tsx` | 聊天主面板，自动滚动 |
+| `components/MessageBubble.tsx` | 单条消息气泡（user / assistant / tool） |
+| `components/ToolCallCard.tsx` | 工具调用可视化卡片（skill 名 + 参数 + 结果） |
+| `components/SessionList.tsx` | 左侧会话列表 |
+| `components/SkillPanel.tsx` | 右侧可用 Skills 面板 |
+| `components/RagUpload.tsx` | 知识库文件上传组件 |
+| `components/SlashCommandHint.tsx` | 输入 `/` 时弹出可用 Skills 列表 |
+| `pages/ChatPage.tsx` | 默认页（聊天 + 工具 + Skills） |
+
+---
+
+## 4. docker-compose.yml 服务清单
+
+| 服务 | 镜像 | 端口 | 数据卷 | 依赖 |
+|---|---|---|---|---|
+| `postgres` | `postgres:16-alpine` | 5432 | `data/postgres` | - |
+| `qdrant` | `qdrant/qdrant:v1.12.0` | 6333/6334 | `data/qdrant` | - |
+| `backend` | 本地构建（`backend/Dockerfile`） | 8000 | `data/uploads` | postgres, qdrant |
+| `frontend` | 本地构建（`frontend/Dockerfile`） | 5173/80 | - | backend |
+
+---
+
+## 5. .env.example 关键变量
+
+```env
+# LLM
+OPENAI_API_KEY=sk-xxx
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+
+# Embedding（可与 LLM 不同的 endpoint）
+EMBEDDING_API_KEY=sk-xxx
+EMBEDDING_BASE_URL=https://api.openai.com/v1
+EMBEDDING_MODEL=text-embedding-3-small
+
+# 数据库
+POSTGRES_USER=minicloud
+POSTGRES_PASSWORD=minicloud
+POSTGRES_DB=minicloud
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+
+# Qdrant
+QDRANT_URL=http://qdrant:6333
+QDRANT_API_KEY=
+
+# Skills
+SKILLS_DIR=/app/skills
+
+# MCP
+MCP_SERVERS_FILE=/app/mcp.servers.json
+
+# 应用
+APP_PORT=8000
+LOG_LEVEL=INFO
+CORS_ORIGINS=http://localhost:5173
+```
+
+---
+
+## 6. 依赖清单（pyproject.toml 摘要）
+
+```toml
+# Web framework
+fastapi = "^0.115"
+uvicorn[standard] = "^0.32"
+
+# LLM
+openai = "^1.50"
+tiktoken = "^0.8"
+
+# Agent / LangChain
+langchain = "^0.3"
+langchain-core = "^0.3"
+langchain-openai = "^0.2"
+
+# RAG
+qdrant-client = "^1.12"
+langchain-text-splitters = "^0.3"
+
+# MCP
+mcp = "^1.0"   # 官方 Python SDK
+
+# DB
+sqlalchemy[asyncio] = "^2.0"
+asyncpg = "^0.30"
+alembic = "^1.13"
+
+# Pydantic / Config
+pydantic = "^2.9"
+pydantic-settings = "^2.5"
+
+# Utils
+structlog = "^24.4"
+httpx = "^0.27"
+python-frontmatter = "^1.1"
+python-multipart = "^0.0.12"
+
+# Dev
+pytest = "^8.3"
+pytest-asyncio = "^0.24"
+ruff = "^0.7"
+```
+
+---
+
+## 7. 首版功能验收清单（demo 范围）
+
+完成以下即可视为 demo 达成：
+
+- [ ] `docker compose up -d` 一键启动全部服务
+- [ ] 前端能创建新会话、发消息，**SSE 流式**返回 assistant 回复
+- [ ] LLM 在需要时调用 1+ 个内置 Skill，工具调用过程在前端可视化
+- [ ] 上传 1 个 PDF/Markdown 到知识库，能用 `/rag` 或自然语言检索到
+- [ ] 至少 1 个 MCP server（filesystem）成功连入，工具列表自动出现在 Agent 中
+- [ ] 长会话超过 token 预算时自动压缩摘要
+- [ ] `/api/v1/skills` 返回所有内置 Skills 描述
+- [ ] Alembic 迁移在容器启动时自动执行

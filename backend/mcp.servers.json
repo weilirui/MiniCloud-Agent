@@ -1,0 +1,14 @@
+{
+  "filesystem": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/app/data/workspace"],
+    "env": {},
+    "description": "Official MCP filesystem server"
+  },
+  "fetch": {
+    "command": "uvx",
+    "args": ["mcp-server-fetch"],
+    "env": {},
+    "description": "HTTP fetch via MCP"
+  }
+}

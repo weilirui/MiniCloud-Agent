@@ -1,0 +1,90 @@
+# =========================================================
+# minicloud-agent .gitignore
+# =========================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage/
+*.cover
+.tox/
+.cache/
+
+# ---- Node / Frontend ----
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+*.local
+
+# ---- Package manager debug logs ----
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Environments & secrets ----
+# Real .env files MUST NEVER be tracked. Only .env.example is committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# ---- Runtime data & uploads ----
+data/
+!data/.gitkeep
+uploads/
+*.pdf
+*.docx
+*.sqlite
+*.sqlite3
+*.db
+
+# ---- Logs ----
+logs/
+*.log
+
+# ---- IDEs & editors ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*.code-workspace
+
+# AI coding assistants
+.claude/
+.cursor/
+.aider*
+.continue/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ---- WorkBuddy local state (sessions, memory) ----
+.workbuddy/
+
+# =========================================================
+# Intentionally NOT ignored (kept in repo):
+#   - package-lock.json  (frontend lockfile)
+#   - uv.lock / poetry.lock (if added later, keep)
+#   - .env.example       (template only, no real secrets)
+#   - LICENSE / docs/    (public files)
+# =========================================================

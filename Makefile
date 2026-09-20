@@ -1,14 +1,30 @@
-.PHONY: help up down logs build restart ps clean test backend-test frontend-build
+.PHONY: help up down logs build restart ps clean test test-cov test-integration backend-test golden eval eval-qdrant eval-real frontend-build
+
+# Python interpreter used for local test / eval runs.
+# Override it if your dependencies live in a virtualenv, e.g.:
+#   make test PY=.venv/Scripts/python
+PY ?= python
+
+# Qdrant as seen from the host. Inside compose it is http://qdrant:6333,
+# but the host-side mapping is 16333 (6333 lands in the Hyper-V reserved range).
+QDRANT_URL ?= http://localhost:16333
 
 help:
-	@echo "make up          - 启动全部服务"
-	@echo "make down        - 停止并移除容器"
-	@echo "make logs        - 查看日志"
-	@echo "make build       - 重新构建镜像"
-	@echo "make restart     - 重启服务"
-	@echo "make ps          - 查看运行状态"
-	@echo "make test        - 后端测试"
-	@echo "make clean       - 清理所有数据卷（危险！）"
+	@echo "make up               - 启动全部服务"
+	@echo "make down             - 停止并移除容器"
+	@echo "make logs             - 查看日志"
+	@echo "make build            - 重新构建镜像"
+	@echo "make restart          - 重启服务"
+	@echo "make ps               - 查看运行状态"
+	@echo "make test             - 本地单元测试 + e2e（无需外部服务）"
+	@echo "make test-cov         - 同上，附带覆盖率报告"
+	@echo "make test-integration - 连接真实 PostgreSQL / Qdrant 的测试"
+	@echo "make backend-test     - 在 Docker 容器内跑测试"
+	@echo "make golden           - 重新生成评测黄金集"
+	@echo "make eval             - 离线检索评测（无需外部服务）"
+	@echo "make eval-qdrant      - 用真实 Qdrant 跑评测（仍是离线 embedding）"
+	@echo "make eval-real        - 真实 Qdrant + 真实 embedding（产生费用）"
+	@echo "make clean            - 清理所有数据卷（危险！）"
 
 up:
 	docker compose up -d
@@ -28,8 +44,34 @@ restart:
 ps:
 	docker compose ps
 
+# ---------- tests ----------
+
+test:
+	cd backend && $(PY) -m pytest -q
+
+test-cov:
+	cd backend && $(PY) -m pytest -q --cov=app --cov-report=term-missing
+
+test-integration:
+	cd backend && $(PY) -m pytest -q --run-integration
+
+# original target: run the suite inside the running container
 backend-test:
 	docker compose exec backend pytest -v
+
+# ---------- evaluation ----------
+
+golden:
+	cd backend && $(PY) scripts/build_golden_dataset.py
+
+eval:
+	cd backend && $(PY) -m eval.runner
+
+eval-qdrant:
+	cd backend && $(PY) -m eval.runner --backend qdrant --qdrant-url $(QDRANT_URL)
+
+eval-real:
+	cd backend && $(PY) -m eval.runner --backend qdrant --qdrant-url $(QDRANT_URL) --embedder openai
 
 clean:
 	@echo "⚠️  这将删除所有数据卷（包括 PG/Qdrant 数据）"

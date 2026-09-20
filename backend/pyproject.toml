@@ -49,6 +49,7 @@ dependencies = [
 dev = [
     "pytest>=8.3,<9.0",
     "pytest-asyncio>=0.24,<1.0",
+    "pytest-cov>=5.0",
     "ruff>=0.7,<1.0",
     "ipython>=8.20",
 ]
@@ -66,4 +67,11 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--strict-markers"
+markers = [
+    "integration: requires a real PostgreSQL / Qdrant (run with --run-integration)",
+    "live: calls a real LLM API and costs money (run with --run-live)",
+]

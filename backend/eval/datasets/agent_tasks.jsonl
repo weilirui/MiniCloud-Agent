@@ -1,0 +1,20 @@
+{"task_id": "t01", "query": "/echo hello world", "expected_tools": ["skill_echo"], "must_contain": ["hello world"]}
+{"task_id": "t02", "query": "/echo 测试一下回声技能", "expected_tools": ["skill_echo"], "must_contain": ["测试一下回声技能"]}
+{"task_id": "t03", "query": "帮我审查一下 backend/app/core/agent.py 这段代码", "expected_tools": ["skill_code_review"], "must_contain": ["agent.py"]}
+{"task_id": "t04", "query": "审查一下分块模块 rag/chunker.py", "expected_tools": ["skill_code_review"], "must_contain": ["chunker.py"]}
+{"task_id": "t05", "query": "从知识库里查一下 RAG 流水线的默认参数", "expected_tools": ["rag_search"], "must_contain": []}
+{"task_id": "t06", "query": "知识库里有没有讲上下文压缩的内容", "expected_tools": ["rag_search"], "must_contain": []}
+{"task_id": "t07", "query": "/rag 上下文管理的预算是多少", "expected_tools": ["skill_rag_qa"], "must_contain": []}
+{"task_id": "t08", "query": "/rag Docker 部署的端口映射", "expected_tools": ["skill_rag_qa"], "must_contain": []}
+{"task_id": "t09", "query": "/git 看一下当前仓库状态", "expected_tools": ["skill_git_status"], "must_contain": []}
+{"task_id": "t10", "query": "/git detail 详细总结改动", "expected_tools": ["skill_git_status"], "must_contain": []}
+{"task_id": "t11", "query": "联网搜一下 MCP 协议的最新进展", "expected_tools": ["skill_web_search"], "must_contain": []}
+{"task_id": "t12", "query": "搜索一下 Qdrant 1.12 的新特性", "expected_tools": ["skill_web_search"], "must_contain": []}
+{"task_id": "t13", "query": "/init 扫描当前项目生成说明书", "expected_tools": ["skill_project_init"], "must_contain": []}
+{"task_id": "t14", "query": "读一下 README.md 这个文件的内容", "expected_tools": ["mcp__filesystem__read_file"], "must_contain": []}
+{"task_id": "t15", "query": "列出 data 目录下有哪些文件", "expected_tools": ["mcp__filesystem__list_directory"], "must_contain": []}
+{"task_id": "t16", "query": "抓取 https://example.com 这个页面的内容", "expected_tools": ["mcp__fetch__fetch"], "must_contain": []}
+{"task_id": "t17", "query": "先检索知识库再总结 RAG 与 Skills 的关系", "expected_tools": ["rag_search", "skill_rag_qa"], "must_contain": []}
+{"task_id": "t18", "query": "查一下知识库，然后审查 agent 模块", "expected_tools": ["rag_search", "skill_code_review"], "must_contain": []}
+{"task_id": "t19", "query": "你好，你是谁", "expected_tools": [], "must_contain": []}
+{"task_id": "t20", "query": "用一句话解释什么是余弦相似度", "expected_tools": [], "must_contain": ["余弦"]}

@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "generated_at": "2026-09-20 21:38:30",
+    "backend": "qdrant",
+    "docs": 12,
+    "chunks": 29,
+    "queries": 50,
+    "top_k": 5,
+    "chunk_size": 180,
+    "overlap": 40,
+    "elapsed_seconds": 1.91
+  },
+  "scores": {
+    "vector": {
+      "recall@1": 0.5,
+      "precision@1": 0.58,
+      "hit_rate@1": 0.58,
+      "recall@3": 0.73,
+      "precision@3": 0.3,
+      "hit_rate@3": 0.76,
+      "recall@5": 0.81,
+      "precision@5": 0.2,
+      "hit_rate@5": 0.82,
+      "mrr": 0.6673,
+      "ndcg@5": 0.6973,
+      "queries": 50.0
+    },
+    "hybrid": {
+      "recall@1": 0.61,
+      "precision@1": 0.7,
+      "hit_rate@1": 0.7,
+      "recall@3": 0.87,
+      "precision@3": 0.3533,
+      "hit_rate@3": 0.88,
+      "recall@5": 0.95,
+      "precision@5": 0.232,
+      "hit_rate@5": 0.96,
+      "mrr": 0.8047,
+      "ndcg@5": 0.8405,
+      "queries": 50.0
+    },
+    "hybrid_mmr": {
+      "recall@1": 0.61,
+      "precision@1": 0.7,
+      "hit_rate@1": 0.7,
+      "recall@3": 0.86,
+      "precision@3": 0.3467,
+      "hit_rate@3": 0.88,
+      "recall@5": 0.97,
+      "precision@5": 0.236,
+      "hit_rate@5": 0.98,
+      "mrr": 0.8053,
+      "ndcg@5": 0.8415,
+      "queries": 50.0
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{"query_id": "q001", "query": "RAG 入库时默认的 chunk_size 和 overlap 是多少", "doc_id": "doc_01_rag_pipeline", "relevant_chunk_ids": ["doc_01_rag_pipeline::0", "doc_01_rag_pipeline::1"]}
+{"query_id": "q002", "query": "检索时默认返回多少条结果", "doc_id": "doc_01_rag_pipeline", "relevant_chunk_ids": ["doc_01_rag_pipeline::2"]}
+{"query_id": "q003", "query": "score_threshold 的默认值", "doc_id": "doc_01_rag_pipeline", "relevant_chunk_ids": ["doc_01_rag_pipeline::2"]}
+{"query_id": "q004", "query": "向量保存在哪个 Qdrant 集合里", "doc_id": "doc_01_rag_pipeline", "relevant_chunk_ids": ["doc_01_rag_pipeline::1"]}
+{"query_id": "q005", "query": "payload 里保存了哪些字段", "doc_id": "doc_01_rag_pipeline", "relevant_chunk_ids": ["doc_01_rag_pipeline::1"]}
+{"query_id": "q006", "query": "递归切分器的分隔符优先级是什么", "doc_id": "doc_02_chunking", "relevant_chunk_ids": ["doc_02_chunking::0"]}
+{"query_id": "q007", "query": "什么情况下会放弃重叠拼接", "doc_id": "doc_02_chunking", "relevant_chunk_ids": ["doc_02_chunking::0", "doc_02_chunking::1"]}
+{"query_id": "q008", "query": "detect_file_type 怎么判断 pdf", "doc_id": "doc_02_chunking", "relevant_chunk_ids": ["doc_02_chunking::1"]}
+{"query_id": "q009", "query": "非 utf-8 编码的文件怎么处理", "doc_id": "doc_02_chunking", "relevant_chunk_ids": ["doc_02_chunking::1"]}
+{"query_id": "q010", "query": "SKILL.md 的 frontmatter 里声明哪些字段", "doc_id": "doc_03_skills", "relevant_chunk_ids": ["doc_03_skills::0"]}
+{"query_id": "q011", "query": "找不到 tools.py 实现时会退化成什么", "doc_id": "doc_03_skills", "relevant_chunk_ids": ["doc_03_skills::1", "doc_03_skills::2"]}
+{"query_id": "q012", "query": "Skill 暴露给模型时工具名是什么形式", "doc_id": "doc_03_skills", "relevant_chunk_ids": ["doc_03_skills::2"]}
+{"query_id": "q013", "query": "内置的 skill 有哪些", "doc_id": "doc_03_skills", "relevant_chunk_ids": ["doc_03_skills::2"]}
+{"query_id": "q014", "query": "SkillsRegistry 扫描哪两个目录", "doc_id": "doc_03_skills", "relevant_chunk_ids": ["doc_03_skills::1"]}
+{"query_id": "q015", "query": "MCP 用什么方式启动子进程通信", "doc_id": "doc_04_mcp", "relevant_chunk_ids": ["doc_04_mcp::1"]}
+{"query_id": "q016", "query": "MCP 工具名的命名规则", "doc_id": "doc_04_mcp", "relevant_chunk_ids": ["doc_04_mcp::1"]}
+{"query_id": "q017", "query": "默认预置了哪些 MCP server", "doc_id": "doc_04_mcp", "relevant_chunk_ids": ["doc_04_mcp::2"]}
+{"query_id": "q018", "query": "MCP server 启动失败会怎样", "doc_id": "doc_04_mcp", "relevant_chunk_ids": ["doc_04_mcp::2"]}
+{"query_id": "q019", "query": "ContextBuilder 默认保留多少条历史消息", "doc_id": "doc_05_context", "relevant_chunk_ids": ["doc_05_context::0"]}
+{"query_id": "q020", "query": "max_context_tokens 默认是多少", "doc_id": "doc_05_context", "relevant_chunk_ids": ["doc_05_context::0"]}
+{"query_id": "q021", "query": "摘要压缩后保留多少字", "doc_id": "doc_05_context", "relevant_chunk_ids": ["doc_05_context::0", "doc_05_context::1"]}
+{"query_id": "q022", "query": "每条消息的 token 开销怎么算", "doc_id": "doc_05_context", "relevant_chunk_ids": ["doc_05_context::1"]}
+{"query_id": "q023", "query": "工具调用的结果以什么角色追加回消息", "doc_id": "doc_06_agent_loop", "relevant_chunk_ids": ["doc_06_agent_loop::0", "doc_06_agent_loop::1"]}
+{"query_id": "q024", "query": "Agent 循环的最大迭代次数是多少", "doc_id": "doc_06_agent_loop", "relevant_chunk_ids": ["doc_06_agent_loop::1"]}
+{"query_id": "q025", "query": "rag_search 属于哪一类工具", "doc_id": "doc_06_agent_loop", "relevant_chunk_ids": ["doc_06_agent_loop::1"]}
+{"query_id": "q026", "query": "工具调用是串行还是并行执行", "doc_id": "doc_06_agent_loop", "relevant_chunk_ids": ["doc_06_agent_loop::0", "doc_06_agent_loop::1"]}
+{"query_id": "q027", "query": "工具调用会记录哪些信息", "doc_id": "doc_06_agent_loop", "relevant_chunk_ids": ["doc_06_agent_loop::1"]}
+{"query_id": "q028", "query": "PostgreSQL 里有哪些表", "doc_id": "doc_07_persistence", "relevant_chunk_ids": ["doc_07_persistence::0"]}
+{"query_id": "q029", "query": "数据库用什么驱动和 ORM", "doc_id": "doc_07_persistence", "relevant_chunk_ids": ["doc_07_persistence::1"]}
+{"query_id": "q030", "query": "数据库迁移用什么工具管理", "doc_id": "doc_07_persistence", "relevant_chunk_ids": ["doc_07_persistence::1"]}
+{"query_id": "q031", "query": "Qdrant 使用什么距离度量", "doc_id": "doc_07_persistence", "relevant_chunk_ids": ["doc_07_persistence::1"]}
+{"query_id": "q032", "query": "元数据字段用什么类型存储", "doc_id": "doc_07_persistence", "relevant_chunk_ids": ["doc_07_persistence::0", "doc_07_persistence::1"]}
+{"query_id": "q033", "query": "backend 容器启动前先执行什么命令", "doc_id": "doc_08_deployment", "relevant_chunk_ids": ["doc_08_deployment::0"]}
+{"query_id": "q034", "query": "为什么宿主机端口要用 16333", "doc_id": "doc_08_deployment", "relevant_chunk_ids": ["doc_08_deployment::1"]}
+{"query_id": "q035", "query": "容器网络内部 Qdrant 端口是多少", "doc_id": "doc_08_deployment", "relevant_chunk_ids": ["doc_08_deployment::1"]}
+{"query_id": "q036", "query": "Docker Compose 一共启动了几个服务", "doc_id": "doc_08_deployment", "relevant_chunk_ids": ["doc_08_deployment::0"]}
+{"query_id": "q037", "query": "SSE 流式事件有哪几种类型", "doc_id": "doc_09_api", "relevant_chunk_ids": ["doc_09_api::0"]}
+{"query_id": "q038", "query": "非流式对话接口是哪个", "doc_id": "doc_09_api", "relevant_chunk_ids": ["doc_09_api::0", "doc_09_api::1"]}
+{"query_id": "q039", "query": "API 统一挂在哪个前缀下", "doc_id": "doc_09_api", "relevant_chunk_ids": ["doc_09_api::0"]}
+{"query_id": "q040", "query": "health 和 health/full 的区别", "doc_id": "doc_09_api", "relevant_chunk_ids": ["doc_09_api::1"]}
+{"query_id": "q041", "query": "前端是怎么解析 SSE 的", "doc_id": "doc_10_frontend", "relevant_chunk_ids": ["doc_10_frontend::1"]}
+{"query_id": "q042", "query": "前端状态管理用什么库", "doc_id": "doc_10_frontend", "relevant_chunk_ids": ["doc_10_frontend::2"]}
+{"query_id": "q043", "query": "代码高亮用的是什么", "doc_id": "doc_10_frontend", "relevant_chunk_ids": ["doc_10_frontend::2"]}
+{"query_id": "q044", "query": "前端布局是哪三栏", "doc_id": "doc_10_frontend", "relevant_chunk_ids": ["doc_10_frontend::0", "doc_10_frontend::1"]}
+{"query_id": "q045", "query": "FakeLLM 的作用是什么", "doc_id": "doc_11_testing", "relevant_chunk_ids": ["doc_11_testing::2"]}
+{"query_id": "q046", "query": "集成测试连接哪些真实服务", "doc_id": "doc_11_testing", "relevant_chunk_ids": ["doc_11_testing::1"]}
+{"query_id": "q047", "query": "pytest 分为哪三层", "doc_id": "doc_11_testing", "relevant_chunk_ids": ["doc_11_testing::0", "doc_11_testing::1"]}
+{"query_id": "q048", "query": "成本是按什么单位计价的", "doc_id": "doc_12_observability", "relevant_chunk_ids": ["doc_12_observability::0"]}
+{"query_id": "q049", "query": "使用记录通过什么方式写入数据库", "doc_id": "doc_12_observability", "relevant_chunk_ids": ["doc_12_observability::0", "doc_12_observability::1"]}
+{"query_id": "q050", "query": "多少分以下的反馈算坏例", "doc_id": "doc_12_observability", "relevant_chunk_ids": ["doc_12_observability::1"]}

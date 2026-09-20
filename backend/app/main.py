@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, health, mcp, rag, sessions, skills
+from app.api import chat, feedback, health, mcp, rag, sessions, skills
 from app.config import settings
 from app.db.session import close_db, init_db
 from app.mcp.manager import get_manager, init_manager
@@ -92,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(rag.router, prefix="/api/v1/rag", tags=["rag"])
     app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"])
     app.include_router(mcp.router, prefix="/api/v1/mcp", tags=["mcp"])
+    app.include_router(feedback.router, prefix="/api/v1/feedback", tags=["feedback"])
 
     return app
 

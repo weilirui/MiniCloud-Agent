@@ -90,3 +90,41 @@ class UserPreference(Base, TimestampMixin):
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class LLMUsage(Base, TimestampMixin):
+    """Token / cost accounting for every LLM call (observability)."""
+
+    __tablename__ = "llm_usage"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    prompt_tokens: Mapped[int] = mapped_column(default=0)
+    completion_tokens: Mapped[int] = mapped_column(default=0)
+    latency_ms: Mapped[int] = mapped_column(default=0)
+    cost_usd: Mapped[float] = mapped_column(default=0.0)
+    extra: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+
+class MessageFeedback(Base, TimestampMixin):
+    """User feedback on an assistant answer (bad-case回流 for annotation / SFT)."""
+
+    __tablename__ = "message_feedback"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    message_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    rating: Mapped[int] = mapped_column(nullable=False)  # 1..5
+    query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    extra: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

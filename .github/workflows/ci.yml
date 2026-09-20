@@ -29,9 +29,11 @@ jobs:
       - name: Lint (new modules)
         run: |
           python -m ruff check \
-            app/core/retry.py app/rag/lexical.py app/rag/hybrid.py \
+            app/core/agent.py app/core/retry.py \
+            app/api/chat.py app/api/sessions.py app/api/feedback.py \
+            app/rag/lexical.py app/rag/hybrid.py app/rag/retriever.py \
             app/core/prompt_store.py app/observability app/feedback \
-            app/api/feedback.py app/schemas/feedback.py \
+            app/schemas/feedback.py \
             eval scripts tests --select E4,E7,E9,F
 
       - name: Build golden dataset

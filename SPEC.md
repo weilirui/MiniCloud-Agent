@@ -27,12 +27,18 @@ minicloud-agent/
 ├── docker-compose.yml              # PG + Qdrant + Backend + Frontend
 ├── .env.example                    # 环境变量模板
 ├── .gitignore
-├── Makefile                        # dev/test/up/down/logs 便捷命令
+├── Makefile                        # dev/test/up/down/logs/eval 便捷命令
+├── .github/workflows/ci.yml        # lint → 建黄金集 → 测试 → 离线评测
 │
 ├── backend/                        # Python 后端
+│   ├── app/                        # 应用代码
+│   ├── tests/                      # unit / integration / e2e
+│   ├── eval/                       # 检索评测（数据集 / 指标 / 运行器）
+│   ├── scripts/                    # 数据集构建脚本
+│   └── alembic/                    # 数据库迁移
 ├── frontend/                       # React 前端
 ├── data/                           # 运行时持久化（git ignore）
-└── docs/                           # 用户文档
+└── docs/                           # 用户文档 / 测试报告 / 评测指南
 ```
 
 ---
@@ -59,6 +65,8 @@ minicloud-agent/
 | `core/context.py` | 上下文管理：消息裁剪 / 摘要压缩 / token 预算（按模型窗口动态调整） | `tiktoken` 或 model 自带 tokenizer |
 | `core/memory.py` | 记忆抽象：`WorkingMemory`（本会话滑动窗口）+ `LongTermMemory`（PG + Qdrant） | - |
 | `core/prompts.py` | 系统提示词模板（带 Skills 列表 / MCP 工具列表注入） | - |
+| `core/retry.py` | **稳定性**：指数退避 + 抖动的重试策略、`with_timeout` 超时包装、`CircuitBreaker` 熔断器（CLOSED / OPEN / HALF_OPEN） | - |
+| `core/prompt_store.py` | **Prompt 工程**：多版本注册、默认版本切换、Jinja 渲染、按 `session_id` MD5 分桶的确定性 A/B 分流、JSON 落盘 | - |
 
 ### 2.3 app/rag/ —— 检索增强生成
 
@@ -69,6 +77,8 @@ minicloud-agent/
 | `rag/chunker.py` | 文档分块：按 token 数 + 重叠，支持 markdown / code / plain | `langchain-text-splitters` |
 | `rag/ingest.py` | 入库流水线：读文件 → 分块 → embedding → 写入 Qdrant | - |
 | `rag/retriever.py` | 检索器：稠密 + 可选 BM25 hybrid，metadata filter | - |
+| `rag/lexical.py` | **词法检索**：`tokenize()`（拉丁词串 + CJK 一元/二元切分，无需分词器）、BM25 打分、`LexicalIndex` | - |
+| `rag/hybrid.py` | **混合检索**：向量 + BM25 双路召回 → min-max 归一化加权融合或 RRF → MMR 多样性重排（词元 Jaccard，零额外 embedding 调用）；`hit_id()` 兼容不同适配器的 id 字段名 | - |
 
 ### 2.4 app/skills/ —— Skills 系统
 
@@ -112,7 +122,7 @@ minicloud-agent/
 |---|---|
 | `db/base.py` | SQLAlchemy `DeclarativeBase` |
 | `db/session.py` | async engine + `async_sessionmaker` |
-| `db/models.py` | 表模型：`Session`, `Message`, `ToolInvocation`, `KnowledgeDoc`, `UserPreference` |
+| `db/models.py` | 表模型：`Session`, `Message`, `ToolInvocation`, `KnowledgeDoc`, `UserPreference`, `LLMUsage`, `MessageFeedback` |
 | `db/migrations/` | Alembic 自动生成 |
 
 #### 数据模型一览
@@ -124,6 +134,10 @@ minicloud-agent/
 | `tool_invocations` | id, message_id, skill_or_tool, args(jsonb), result, duration_ms, status |
 | `knowledge_docs` | id, filename, source_type, qdrant_point_ids, uploaded_at |
 | `user_preferences` | key, value(jsonb), updated_at（KV 表，存默认模型、温度等） |
+| `llm_usage`（新增） | id, session_id, model, endpoint, prompt_tokens, completion_tokens, total_tokens, latency_ms, cost_usd, created_at |
+| `message_feedback`（新增） | id, session_id, message_id, rating(1-5), query, answer, comment, tags(jsonb), created_at |
+
+> 后两张表由迁移 `alembic/versions/0002_usage_feedback.py` 建立。
 
 ### 2.7 app/api/ —— HTTP 路由
 
@@ -135,6 +149,7 @@ minicloud-agent/
 | `/api/v1/rag` | `rag.py` | `POST /upload`（上传文件）、`POST /query`（检索）、`DELETE /docs/{id}` |
 | `/api/v1/skills` | `skills.py` | `GET /`（列表）、`GET /{name}`（详情）、`POST /invoke` |
 | `/api/v1/mcp` | `mcp.py` | `GET /servers`、`POST /servers/{name}/restart` |
+| `/api/v1/feedback`（新增） | `feedback.py` | `POST /`（提交评分，返回 `label=bad/good`）、`GET /stats`（总量/差评数/差评率） |
 
 ### 2.8 app/schemas/ —— Pydantic 模型
 
@@ -145,6 +160,7 @@ minicloud-agent/
 | `rag.py` | `UploadResponse`, `QueryRequest`, `QueryResponse` |
 | `skill.py` | `SkillInfo`, `SkillInvokeRequest` |
 | `mcp.py` | `MCPServerConfig`, `MCPServerStatus` |
+| `feedback.py`（新增） | `FeedbackCreate`, `FeedbackOut`, `FeedbackStats` |
 
 ### 2.9 app/utils/
 
@@ -155,15 +171,44 @@ minicloud-agent/
 | `utils/logging.py` | structlog 配置 |
 | `utils/errors.py` | 自定义异常 + FastAPI 异常处理器 |
 
-### 2.10 backend/tests/
+### 2.10 app/observability/ —— 成本与用量
 
-| 文件 | 覆盖范围 |
+| 文件 | 职责 |
 |---|---|
-| `test_agent.py` | Agent loop：tool call 解析、循环退出条件 |
-| `test_rag.py` | 文档分块、embedding、Qdrant 写入、检索 |
-| `test_skills.py` | Skill 注册、加载、调用 |
-| `test_mcp.py` | MCP client 与官方 example server 联通 |
-| `test_api.py` | FastAPI 路由 smoke test |
+| `observability/cost.py` | 按模型的每百万 token 计价表、`estimate_cost()`、`UsageRecord`、`CostTracker`（按 model/endpoint 聚合）、`db_usage_sink()` 落 `llm_usage` 表 |
+
+### 2.11 app/feedback/ —— 反馈闭环
+
+| 文件 | 职责 |
+|---|---|
+| `feedback/service.py` | `FeedbackRecord`、`FeedbackService.submit/negative/stats/export_jsonl`；`rating < 4` 判定为坏例，可导出 JSONL 用于人工标注或 SFT |
+
+### 2.12 backend/tests/ —— 测试
+
+> 现状：**234 个用例全部通过，覆盖率 70%**。服务不可达时集成用例自动 skip，保证默认套件永远可跑。
+
+| 路径 | 覆盖范围 |
+|---|---|
+| `tests/conftest.py` | 环境变量预置（`app.config` 在 import 时实例化，必须先注入 `OPENAI_API_KEY`）、`--run-integration` / `--run-live` 开关、公共 fixture |
+| `tests/fakes/fake_llm.py` | `FakeLLM`：按脚本产出 `content` / `tool_calls` / `error`，同时实现 `chat()` 与 `stream()` 并记录每次调用，让 Agent Loop 不花钱也能测 |
+| `tests/unit/` | 16 个文件：token 计数、分块、上下文、Skills、重试/熔断、混合检索、Prompt 版本、成本、反馈、记忆、SSE、入库、MCP 配置、异常、Schema |
+| `tests/integration/test_agent_loop.py` | Agent 循环 14 例（**不需要外部服务**）：工具路由、未知工具、迭代上限、并行工具调用、摘要触发、错误传播 |
+| `tests/integration/test_db_persistence.py` | 真实 PostgreSQL：会话/消息往返、级联删除、工具审计、`llm_usage`、`message_feedback`、sessions 与 feedback 的 HTTP 层 |
+| `tests/integration/test_qdrant_rag.py` | 真实 Qdrant：写入/检索/删除/计数、混合检索跑在真实向量库上 |
+| `tests/e2e/test_smoke.py` | HTTP 冒烟（裸 FastAPI 实例，只挂 health + skills，避免 lifespan 拉起 MCP 子进程） |
+
+### 2.13 backend/eval/ —— 检索评测
+
+| 路径 | 职责 |
+|---|---|
+| `eval/datasets/` | `corpus.jsonl`（12 篇项目语料）、`queries.jsonl`（50 条查询）、`golden_retrieval.jsonl`（脚本生成的相关块 id）、`agent_tasks.jsonl`（20 条 Agent 任务） |
+| `eval/metrics/retrieval.py` | `recall@k` `precision@k` `hit_rate@k` `MRR` `nDCG@k` |
+| `eval/metrics/generation.py` | `lexical_support`（离线）、`citation_rate`、`llm_faithfulness`（LLM-as-judge） |
+| `eval/metrics/agent.py` | `tool_selection_acc`、`tool_selection_exact`、`task_success_rate`、`avg_steps` |
+| `eval/stores/` | `memory.py`（内存向量库）、`qdrant.py`（包装生产 `QdrantStore`） |
+| `eval/offline_embedder.py` | `HashingEmbedder`：词袋固定种子随机投影，离线可复现 |
+| `eval/runner.py` | 对比 `vector` / `hybrid` / `hybrid_mmr` 三种策略，输出 `eval/reports/eval_report.{md,json}` |
+| `scripts/build_golden_dataset.py` | 由语料 + 查询推导黄金集（不手写标注） |
 
 ---
 
@@ -293,6 +338,7 @@ python-multipart = "^0.0.12"
 # Dev
 pytest = "^8.3"
 pytest-asyncio = "^0.24"
+pytest-cov = "^6.0"
 ruff = "^0.7"
 ```
 
@@ -302,7 +348,7 @@ ruff = "^0.7"
 
 完成以下即可视为 demo 达成：
 
-- [ ] `docker compose up -d` 一键启动全部服务
+- [x] `docker compose up -d` 一键启动全部服务
 - [ ] 前端能创建新会话、发消息，**SSE 流式**返回 assistant 回复
 - [ ] LLM 在需要时调用 1+ 个内置 Skill，工具调用过程在前端可视化
 - [ ] 上传 1 个 PDF/Markdown 到知识库，能用 `/rag` 或自然语言检索到
@@ -310,3 +356,15 @@ ruff = "^0.7"
 - [ ] 长会话超过 token 预算时自动压缩摘要
 - [ ] `/api/v1/skills` 返回所有内置 Skills 描述
 - [ ] Alembic 迁移在容器启动时自动执行
+
+## 8. 工程化验收清单（已达成）
+
+- [x] 分层测试：`unit` / `integration` / `e2e`，234 用例全绿
+- [x] Agent Loop 用 `FakeLLM` 可离线回归，覆盖率 93%
+- [x] 集成用例在真实 PostgreSQL / Qdrant 上验证通过（17 例由 skip 转 pass）
+- [x] 覆盖率 70%，新增模块普遍 ≥ 94%
+- [x] 检索评测：黄金集 + 指标 + 三策略对比，Recall@5 0.81 → 0.97
+- [x] CI：`.github/workflows/ci.yml`（ruff → 建黄金集 → pytest 覆盖率卡口 → 离线评测）
+- [x] 混合检索（BM25 + 向量 + MMR）、重试/熔断、Prompt 版本与 A/B、成本落库、反馈回流
+
+> 未勾选的第 7 节条目属于"需要真实 LLM Key 才能人工验证"的部分，不阻塞工程化。

@@ -9,10 +9,15 @@
 | 🤖 **Agent Loop** | OpenAI 兼容协议（DeepSeek/Qwen/Moonshot/GPT 通用），tool_calls 自动执行 |
 | 🧰 **Skills 系统** | 6 个内置 Skill（`/echo` `/init` `/code-review` `/rag` `/git` `/search`），本地注册表，支持自定义 |
 | 🔌 **MCP 集成** | stdio 客户端，预置 filesystem + fetch，可热重启 |
-| 📚 **RAG** | 文档上传 → 分块 → embedding → Qdrant，支持 PDF/MD/code/text |
+| 📚 **RAG** | 文档上传 → 分块 → embedding → Qdrant，支持 PDF/MD/code/text；**混合检索**（向量 + BM25 融合 + MMR 去重） |
 | 🧠 **上下文管理** | 滑动窗口 + token 计数 + 超额自动摘要压缩 |
 | 💬 **流式 UI** | SSE 流式对话，工具调用可视化，三栏布局（会话 / 聊天 / Skills+知识库） |
 | 🗄 **持久化** | PostgreSQL（会话/消息/工具调用/知识库元数据）+ Qdrant（向量） |
+| 🛡 **稳定性** | 指数退避重试 + 超时 + 熔断器（CLOSED/OPEN/HALF_OPEN） |
+| 🧪 **Prompt 工程** | 多版本管理 + 按 session 哈希的确定性 A/B 分流 |
+| 📊 **可观测性** | token/成本按模型计价并落库（`llm_usage`） |
+| 🔁 **反馈闭环** | 用户评分回流，`<4` 星自动标记坏例并导出 JSONL |
+| ✅ **测试与评测** | 234 个用例（70% 覆盖率）+ 检索评测（Recall@5 0.81 → 0.97） |
 
 ## 🚀 快速开始
 
@@ -38,14 +43,22 @@ minicloud-agent/
 │   ├── app/
 │   │   ├── main.py              # FastAPI factory + lifespan
 │   │   ├── config.py            # pydantic-settings
-│   │   ├── core/                # llm, agent, context, memory, prompts
-│   │   ├── rag/                 # embeddings, qdrant, chunker, ingest, retriever
+│   │   ├── core/                # llm, agent, context, memory, prompts,
+│   │   │                        # retry, prompt_store
+│   │   ├── rag/                 # embeddings, qdrant_store, chunker, ingest,
+│   │   │                        # retriever, lexical (BM25), hybrid (融合+MMR)
 │   │   ├── skills/              # base, registry, loader, invoker, builtin/*
 │   │   ├── mcp/                 # client, manager, adapter, config
 │   │   ├── db/                  # base, session, models
-│   │   ├── api/                 # chat, sessions, rag, skills, mcp, health
+│   │   ├── api/                 # chat, sessions, rag, skills, mcp, health,
+│   │   │                        # feedback
+│   │   ├── observability/       # cost (token/成本计量与落库)
+│   │   ├── feedback/            # service (评分收集与坏例导出)
 │   │   ├── schemas/             # Pydantic schemas
 │   │   └── utils/               # streaming, token_counter, logging, errors
+│   ├── tests/                   # unit / integration / e2e + fakes
+│   ├── eval/                    # datasets / metrics / stores / runner
+│   ├── scripts/                 # build_golden_dataset.py
 │   ├── alembic/                 # 迁移
 │   ├── pyproject.toml
 │   └── Dockerfile
@@ -56,7 +69,8 @@ minicloud-agent/
 │   │   ├── components/          # ChatWindow, MessageBubble, ToolCallCard, ...
 │   │   └── pages/ChatPage.tsx
 │   └── Dockerfile
-├── docs/                        # 用户文档
+├── docs/                        # 用户文档 + 测试报告 + 评测指南
+├── .github/workflows/ci.yml
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -78,6 +92,8 @@ minicloud-agent/
 | `POST` | `/api/v1/skills/invoke` | 直接调用 Skill |
 | `GET` | `/api/v1/mcp/servers` | MCP server 状态 |
 | `POST` | `/api/v1/mcp/servers/{name}/restart` | 重启 MCP server |
+| `POST` | `/api/v1/feedback/` | 提交评分（返回 `label=bad/good`） |
+| `GET` | `/api/v1/feedback/stats` | 反馈统计（总量 / 差评数 / 差评率） |
 | `GET` | `/api/v1/health` | 健康检查 |
 
 ## 🧰 内置 Skills
@@ -104,12 +120,45 @@ minicloud-agent/
 ## 🛠 开发命令
 
 ```bash
-make up         # 启动所有服务
-make down       # 停止
-make logs       # 查看日志
-make build      # 重新构建
-make ps         # 状态
-make backend-test  # 跑测试
+make up                # 启动所有服务
+make down              # 停止
+make logs              # 查看日志
+make build             # 重新构建
+make ps                # 状态
+
+make test              # 单元 + 联调 + e2e（无需外部服务），约 5 秒
+make test-cov          # 同上并输出覆盖率
+make test-integration  # 额外连接真实 PostgreSQL / Qdrant
+make backend-test      # 在容器内跑
+
+make golden            # 重新生成评测黄金集
+make eval              # 离线检索评测（无需外部服务）
+make eval-qdrant       # 真实 Qdrant（离线 embedding）
+make eval-real         # 真实 Qdrant + 真实 embedding（产生费用）
 ```
+
+若依赖装在虚拟环境里，加 `PY=<venv>/Scripts/python`（Windows）或 `PY=<venv>/bin/python`。
+
+## 🧪 测试与评测
+
+```bash
+cd backend
+pytest -q                    # 216 passed（无外部服务）
+pytest -q --run-integration  # 234 passed（含真实 PG / Qdrant）
+```
+
+- 分层：`unit` / `integration`（Agent Loop + PG + Qdrant）/ `e2e`
+- Agent Loop 用可编排的 `FakeLLM` 测试，不花钱、不联网
+- 覆盖率 **70%**，`core/agent.py` 93%、`rag/hybrid.py` 100%、`core/retry.py` 99%
+
+检索评测（12 篇语料 / 29 块 / 50 条查询，top_k=5）：
+
+| 策略 | recall@5 | MRR | nDCG@5 |
+|---|---|---|---|
+| 纯向量（基线） | 0.8100 | 0.6673 | 0.6973 |
+| 混合检索 | 0.9500 | 0.8047 | 0.8405 |
+| 混合 + MMR | **0.9700** | **0.8053** | **0.8415** |
+
+详见 [`docs/testing-report.md`](docs/testing-report.md) 与 [`docs/eval-guide.md`](docs/eval-guide.md)。
 
 详见 [`SPEC.md`](SPEC.md) 和 [`ARCHITECTURE.md`](ARCHITECTURE.md)。

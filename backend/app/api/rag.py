@@ -12,7 +12,7 @@ from app.db.models import KnowledgeDoc
 from app.deps import get_db
 from app.rag.ingest import ingest_file
 from app.rag.qdrant_store import get_qdrant_store
-from app.rag.retriever import get_retriever
+from app.rag.retriever import get_retriever, invalidate_lexical_index
 from app.schemas.rag import (
     DocOut,
     QueryHit,
@@ -143,8 +143,10 @@ async def delete_doc(
     try:
         store = get_qdrant_store()
         store.delete_by_doc_id(str(doc_id))
+        invalidate_lexical_index()
     except Exception as e:
         logger.warning("qdrant_delete_failed", error=str(e))
+        invalidate_lexical_index()
 
     await db.delete(doc)
     await db.commit()

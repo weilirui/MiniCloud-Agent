@@ -28,6 +28,10 @@ class RecordingStore:
         self.last_top_k = top_k
         return self.search_results[:top_k]
 
+    def iter_chunks(self, batch_size: int = 256):
+        """Mirror of QdrantStore.iter_chunks, backed by what was upserted."""
+        yield from self.upserted
+
 
 async def test_ingest_file_produces_chunks_and_points():
     store = RecordingStore()
@@ -73,8 +77,9 @@ async def test_ingest_reads_utf8_content():
 
 
 async def test_retriever_delegates_to_store():
+    """Dense-only mode passes top_k straight through to the store."""
     store = RecordingStore()
-    retriever = Retriever(store=store)
+    retriever = Retriever(store=store, hybrid=False)
 
     hits = await retriever.retrieve("查询内容", top_k=3)
     assert hits[0]["text"] == "命中片段"
@@ -84,8 +89,19 @@ async def test_retriever_delegates_to_store():
 
 async def test_retriever_default_top_k():
     store = RecordingStore()
-    await Retriever(store=store).retrieve("q")
+    await Retriever(store=store, hybrid=False).retrieve("q")
     assert store.last_top_k == 5
+
+
+async def test_retriever_over_fetches_for_fusion_in_hybrid_mode():
+    """Hybrid needs a candidate pool bigger than top_k to have anything to fuse.
+
+    ``top_k`` is the size of the *result*, not the size of each branch's fetch.
+    """
+    store = RecordingStore()
+    await Retriever(store=store, hybrid=True).retrieve("q", top_k=3)
+
+    assert store.last_top_k == 3 * 4
 
 
 async def test_retriever_returns_empty_list_when_nothing_found():

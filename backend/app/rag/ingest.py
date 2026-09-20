@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from app.rag.chunker import Chunk, chunk_text, load_file_content
 from app.rag.qdrant_store import QdrantStore, get_qdrant_store
+from app.rag.retriever import invalidate_lexical_index
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -53,5 +54,8 @@ async def ingest_file(
     ]
 
     point_ids = await store.upsert_points(payload_chunks)
+    # The BM25 branch is built from whatever is in Qdrant, so the corpus just
+    # changed underneath it. Marking dirty is enough; the rebuild is lazy.
+    invalidate_lexical_index()
     logger.info("ingested", filename=filename, doc_id=doc_id, n_chunks=len(chunks))
     return IngestionResult(doc_id=doc_id, chunk_count=len(chunks), point_ids=point_ids)

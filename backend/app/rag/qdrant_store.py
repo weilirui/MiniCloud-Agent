@@ -124,6 +124,47 @@ class QdrantStore:
             for r in results
         ]
 
+    def iter_chunks(self, batch_size: int = 256):
+        """Yield every stored chunk payload, paging through the collection.
+
+        Used to (re)build the in-memory lexical index. Vectors are skipped;
+        only the payload (text + addressing) is needed, which keeps the scroll
+        cheap enough to run on startup or after an ingestion.
+        """
+        offset = None
+        while True:
+            try:
+                points, offset = self._client.scroll(
+                    collection_name=self.collection,
+                    limit=batch_size,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+            except UnexpectedResponse as exc:
+                logger.warning("qdrant_scroll_failed", error=str(exc))
+                return
+
+            if not points:
+                return
+
+            for point in points:
+                payload = point.payload or {}
+                yield {
+                    "text": payload.get("text", ""),
+                    "source": payload.get("source", ""),
+                    "doc_id": payload.get("doc_id"),
+                    "chunk_index": payload.get("chunk_index", 0),
+                    "metadata": {
+                        k: v
+                        for k, v in payload.items()
+                        if k not in ("text", "source", "doc_id", "chunk_index")
+                    },
+                }
+
+            if offset is None:
+                return
+
     def delete_by_doc_id(self, doc_id: str) -> None:
         """Delete all points belonging to a doc_id."""
         self._client.delete(

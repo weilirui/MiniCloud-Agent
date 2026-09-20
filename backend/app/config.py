@@ -46,6 +46,18 @@ class Settings(BaseSettings):
     qdrant_api_key: str | None = None
     qdrant_collection: str = "minicloud_kb"
 
+    # ===== RAG retrieval =====
+    # Hybrid = dense (Qdrant) + lexical (BM25) fusion, then MMR re-ranking.
+    # Turn this off to fall back to the original dense-only pipeline.
+    rag_hybrid_enabled: bool = True
+    rag_hybrid_fusion: str = "weighted"  # "weighted" | "rrf"
+    rag_vector_weight: float = 0.7
+    rag_lexical_weight: float = 0.3
+    rag_mmr_enabled: bool = True
+    rag_mmr_lambda: float = 0.7
+    # Safety cap for the in-memory BM25 index rebuilt from Qdrant.
+    rag_lexical_max_chunks: int = 20000
+
     # ===== Skills =====
     skills_builtin_dir: str = "/app/app/skills/builtin"
     skills_user_dir: str = "/app/data/skills"

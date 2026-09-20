@@ -60,7 +60,11 @@ test-integration:
 
 # original target: run the suite inside the running container
 backend-test:
-	docker compose exec backend pytest -v
+	# The runtime image deliberately ships without test deps (it is the image that
+	# gets deployed); tests/eval/scripts are bind-mounted by docker-compose instead.
+	# The install is idempotent, so only the first run pays for it.
+	docker compose exec backend pip install -q pytest "pytest-asyncio>=0.24,<1.0" pytest-cov
+	docker compose exec backend python -m pytest -v
 
 # ---------- evaluation ----------
 

@@ -51,6 +51,11 @@ services:
       - ./data/uploads:/app/data/uploads
       - ./backend/app/skills/builtin:/app/app/skills/builtin
       - ./backend/mcp.servers.json:/app/mcp.servers.json
+      # Bind-mounted for development only: the image ships neither tests nor the
+      # eval harness, and `make backend-test` runs the suite inside this container.
+      - ./backend/tests:/app/tests
+      - ./backend/eval:/app/eval
+      - ./backend/scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy

@@ -29,6 +29,10 @@ os.environ.setdefault("OPENAI_BASE_URL", "http://127.0.0.1:1/v1")
 os.environ.setdefault("OPENAI_MODEL", "gpt-4o-mini")
 os.environ.setdefault("POSTGRES_HOST", "localhost")
 os.environ.setdefault("POSTGRES_PORT", "5432")
+# Integration tests run ``Base.metadata.create_all``; point them at a throwaway
+# database so they can never materialize tables in the development DB ahead of
+# Alembic (which then fails with DuplicateTableError on the next container boot).
+os.environ.setdefault("POSTGRES_DB", "minicloud_test")
 os.environ.setdefault("QDRANT_URL", "http://localhost:16333")
 os.environ.setdefault("SKILLS_BUILTIN_DIR", str(BACKEND_DIR / "app" / "skills" / "builtin"))
 os.environ.setdefault("SKILLS_USER_DIR", str(REPO_ROOT / "data" / "skills"))

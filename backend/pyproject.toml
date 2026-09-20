@@ -53,6 +53,11 @@ dev = [
     "ruff>=0.7,<1.0",
     "ipython>=8.20",
 ]
+# Only required for `--embedder local` (real semantic vectors, no API key).
+# Split out so CI can install the lighter dev extra.
+eval = [
+    "fastembed>=0.7",
+]
 
 [build-system]
 requires = ["hatchling"]

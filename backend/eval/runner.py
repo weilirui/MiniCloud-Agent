@@ -141,13 +141,22 @@ def render_markdown(
     lines.append("括号中是与基线 `vector` 的差值。")
     lines.append("")
 
-    if meta.get("backend") == "memory":
+    # The caveat depends on the *embedder*, not on the vector backend: running
+    # against real Qdrant with hash vectors is still only a relative comparison.
+    embedder = meta.get("embedder", "offline")
+    if embedder == "offline":
         lines.append(
-            "> 注意：本报告使用离线哈希向量（HashingEmbedder）代替真实 embedding，"
+            "> 注意：本次使用离线哈希向量（HashingEmbedder）代替真实 embedding，"
             "**只能用于策略之间的相对比较**，不能当作绝对检索质量。"
-            "要拿绝对数值，请跑 `python -m eval.runner --backend qdrant`。"
+            "要拿绝对数值，请跑 `python -m eval.runner --embedder local`。"
         )
-        lines.append("")
+    else:
+        label = {
+            "local": "本地语义模型 bge-small-zh-v1.5（ONNX，CPU）",
+            "openai": "托管 embedding API",
+        }.get(embedder, embedder)
+        lines.append(f"> 本次向量由 {label} 生成，数值可作为绝对检索质量参考。")
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -179,6 +188,10 @@ async def evaluate(
         from app.rag.embeddings import get_embedding_client
 
         embedding: Any = get_embedding_client()
+    elif embedder == "local":
+        from eval.local_embedder import LocalEmbedder
+
+        embedding = LocalEmbedder()
     else:
         embedding = HashingEmbedder()
 
@@ -206,6 +219,7 @@ async def evaluate(
     meta = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "backend": backend,
+        "embedder": embedder,
         "docs": len(corpus),
         "chunks": len(chunks),
         "queries": len(queries),
@@ -250,9 +264,10 @@ def main() -> int:
     )
     parser.add_argument(
         "--embedder",
-        choices=("offline", "openai"),
+        choices=("offline", "local", "openai"),
         default="offline",
-        help="'openai' costs money but produces absolute-quality numbers",
+        help="'local' runs bge-small-zh on CPU (free, absolute-quality numbers); "
+        "'openai' calls a hosted embedding API",
     )
     args = parser.parse_args()
 

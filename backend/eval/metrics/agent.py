@@ -40,20 +40,31 @@ def evaluate_agent_traces(traces: list[dict]) -> dict[str, float]:
 
     ``traces``: [{"tools": [...], "final": str, "expected_tools": [...],
                   "must_contain": [...]}, ...]
+
+    Only tasks that actually declare ``must_contain`` are scored for success.
+    Counting the rest as failures would drag ``task_success_rate`` down for a
+    reason that has nothing to do with the agent — most eval tasks check tool
+    routing, not answer content.
     """
     if not traces:
         return {}
 
     acc = [tool_selection_accuracy(t.get("tools", []), t.get("expected_tools", [])) for t in traces]
     exact = [tool_selection_exact_match(t.get("tools", []), t.get("expected_tools", [])) for t in traces]
-    success = [task_success(t.get("final", ""), t.get("must_contain", [])) for t in traces]
     steps = [len(t.get("tools", [])) for t in traces]
+
+    scorable = [
+        task_success(t.get("final", ""), t.get("must_contain", []))
+        for t in traces
+        if [m for m in t.get("must_contain", []) if m]
+    ]
 
     return {
         "tasks": float(len(traces)),
         "tool_selection_acc": round(sum(acc) / len(acc), 4),
         "tool_selection_exact": round(sum(exact) / len(exact), 4),
-        "task_success_rate": round(sum(success) / len(success), 4),
+        "task_success_rate": round(sum(scorable) / len(scorable), 4) if scorable else None,
+        "task_success_n": float(len(scorable)),
         "avg_steps": round(sum(steps) / len(steps), 4),
         "max_steps": float(max(steps)),
     }

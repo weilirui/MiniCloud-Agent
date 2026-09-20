@@ -2,6 +2,8 @@
 
 > Mini Agent 平台，具备 **RAG**、**Skills**、**MCP**、**上下文管理** 等能力，对标 Claude Code 的 demo 实现。
 
+![minicloud-agent 聊天界面](docs/images/chat-main.png)
+
 ## ✨ 功能
 
 | 模块 | 实现 |
@@ -17,7 +19,12 @@
 | 🧪 **Prompt 工程** | 多版本管理 + 按 session 哈希的确定性 A/B 分流 |
 | 📊 **可观测性** | token/成本按模型计价并落库（`llm_usage`） |
 | 🔁 **反馈闭环** | 用户评分回流，`<4` 星自动标记坏例并导出 JSONL |
-| ✅ **测试与评测** | 262 个用例（70% 覆盖率）+ 检索评测 + Agent 轨迹评测 + 生成质量评测 |
+| ✅ **测试与评测** | 270 个用例（73% 覆盖率）+ 检索评测 + Agent 轨迹评测 + 生成质量评测 |
+
+工具调用会以卡片形式落进消息流：参数、结果、状态都可展开查看 —— **重开会话后轨迹依然完整**，
+因为 `assistant(tool_calls)` 与每条 `tool` 结果都真实落库，而不是只存在于前端内存里。
+
+![工具调用详情](docs/images/tool-card-detail.png)
 
 ## 🚀 快速开始
 
@@ -126,10 +133,10 @@ make logs              # 查看日志
 make build             # 重新构建
 make ps                # 状态
 
-make test              # 单元 + 联调 + e2e（无需外部服务），约 5 秒
+make test              # 单元 + 联调 + e2e（无需外部服务），约 14 秒
 make test-cov          # 同上并输出覆盖率
 make test-integration  # 额外连接真实 PostgreSQL / Qdrant
-make backend-test      # 在容器内跑
+make backend-test      # 在运行中的容器里跑（首次自动装 pytest）
 
 make golden            # 重新生成评测黄金集
 make eval              # 离线检索评测（哈希向量，只能相对比较）
@@ -146,13 +153,14 @@ make eval-online       # Agent 轨迹 + 生成质量（真实 LLM，产生费用
 
 ```bash
 cd backend
-pytest -q                    # 245 passed / 17 skipped（无外部服务）
-pytest -q --run-integration  # 262 passed（含真实 PG / Qdrant）
+pytest -q                    # 251 passed / 18 skipped（无外部服务）
+pytest -q --run-integration  # 270 passed（含真实 PG / Qdrant）
 ```
 
 - 分层：`unit` / `integration`（Agent Loop + PG + Qdrant）/ `e2e`
 - Agent Loop 用可编排的 `FakeLLM` 测试，不花钱、不联网
-- 覆盖率 **70%**，`core/agent.py` 93%、`rag/hybrid.py` 100%、`core/retry.py` 99%
+- 数据库类集成测试跑在独立的 `minicloud_test` 库上，不会污染开发库
+- 覆盖率 **73%**，`core/agent.py` 93%、`rag/hybrid.py` 100%、`core/retry.py` 99%、`api/sessions.py` 71%
 
 检索评测（12 篇语料 / 29 块 / 50 条查询，top_k=5），语义向量 bge-small-zh-v1.5：
 

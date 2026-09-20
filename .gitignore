@@ -25,6 +25,7 @@ coverage/
 # ---- Node / Frontend ----
 node_modules/
 dist/
+dist2/
 .vite/
 *.tsbuildinfo
 *.local

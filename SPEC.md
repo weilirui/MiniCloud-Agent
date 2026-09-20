@@ -13,6 +13,9 @@
 - 配置统一从 `.env` 读取，**禁止在代码里硬编码 API key**。
 - LLM 调用必须支持流式（SSE）和非流式两种模式。
 - 所有工具调用必须记录到 `tool_invocations` 表（可观测 + 回放）。
+- 每一轮工具调用必须完整落库到 `messages`：请求工具的 `assistant`（含 `tool_calls`）与每条 `tool` 结果各自成行。
+  存储保留 provider 格式以便直接回喂 LLM，UI 侧再由 API 转成扁平形状；
+  **不允许**只在内存上下文里执行工具而不落库——否则重开会话会丢失整条工具轨迹。
 - 日志统一用 `structlog`，关键事件（tool call / llm call / mcp spawn）必须记录。
 
 ---

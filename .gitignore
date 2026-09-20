@@ -88,3 +88,6 @@ $RECYCLE.BIN/
 #   - .env.example       (template only, no real secrets)
 #   - LICENSE / docs/    (public files)
 # =========================================================
+
+# Local embedding model cache (eval --embedder local)
+.fastembed_cache/

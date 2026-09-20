@@ -76,7 +76,8 @@ minicloud-agent/
 | `rag/qdrant_store.py` | Qdrant 客户端封装：collection 管理、CRUD、metadata filter | `qdrant-client` |
 | `rag/chunker.py` | 文档分块：按 token 数 + 重叠，支持 markdown / code / plain | `langchain-text-splitters` |
 | `rag/ingest.py` | 入库流水线：读文件 → 分块 → embedding → 写入 Qdrant | - |
-| `rag/retriever.py` | 检索器：稠密 + 可选 BM25 hybrid，metadata filter | - |
+| `rag/retriever.py` | **检索入口**：`rag_hybrid_enabled` 打开时走 `HybridRetriever`，混合链路任何异常退回纯向量；`invalidate_lexical_index()` 供入库/删除调用 | - |
+| `rag/corpus_index.py` | `CorpusLexicalIndex`：从 Qdrant 滚动重建 BM25 索引，惰性 + dirty 标记（批量入库只滚一次），chunk id 用 `hit_id()` 派生以保证与稠密分支一致；重建失败静默降级 | - |
 | `rag/lexical.py` | **词法检索**：`tokenize()`（拉丁词串 + CJK 一元/二元切分，无需分词器）、BM25 打分、`LexicalIndex` | - |
 | `rag/hybrid.py` | **混合检索**：向量 + BM25 双路召回 → min-max 归一化加权融合或 RRF → MMR 多样性重排（词元 Jaccard，零额外 embedding 调用）；`hit_id()` 兼容不同适配器的 id 字段名 | - |
 
@@ -185,7 +186,7 @@ minicloud-agent/
 
 ### 2.12 backend/tests/ —— 测试
 
-> 现状：**234 个用例全部通过，覆盖率 70%**。服务不可达时集成用例自动 skip，保证默认套件永远可跑。
+> 现状：**262 个用例全部通过，覆盖率 70%**。服务不可达时集成用例自动 skip，保证默认套件永远可跑。
 
 | 路径 | 覆盖范围 |
 |---|---|
@@ -197,18 +198,23 @@ minicloud-agent/
 | `tests/integration/test_qdrant_rag.py` | 真实 Qdrant：写入/检索/删除/计数、混合检索跑在真实向量库上 |
 | `tests/e2e/test_smoke.py` | HTTP 冒烟（裸 FastAPI 实例，只挂 health + skills，避免 lifespan 拉起 MCP 子进程） |
 
-### 2.13 backend/eval/ —— 检索评测
+### 2.13 backend/eval/ —— 评测
 
 | 路径 | 职责 |
 |---|---|
 | `eval/datasets/` | `corpus.jsonl`（12 篇项目语料）、`queries.jsonl`（50 条查询）、`golden_retrieval.jsonl`（脚本生成的相关块 id）、`agent_tasks.jsonl`（20 条 Agent 任务） |
 | `eval/metrics/retrieval.py` | `recall@k` `precision@k` `hit_rate@k` `MRR` `nDCG@k` |
 | `eval/metrics/generation.py` | `lexical_support`（离线）、`citation_rate`、`llm_faithfulness`（LLM-as-judge） |
-| `eval/metrics/agent.py` | `tool_selection_acc`、`tool_selection_exact`、`task_success_rate`、`avg_steps` |
+| `eval/metrics/agent.py` | `tool_selection_acc`、`tool_selection_exact`、`task_success_rate`（只统计声明了 `must_contain` 的任务）、`avg_steps` |
 | `eval/stores/` | `memory.py`（内存向量库）、`qdrant.py`（包装生产 `QdrantStore`） |
-| `eval/offline_embedder.py` | `HashingEmbedder`：词袋固定种子随机投影，离线可复现 |
-| `eval/runner.py` | 对比 `vector` / `hybrid` / `hybrid_mmr` 三种策略，输出 `eval/reports/eval_report.{md,json}` |
+| `eval/offline_embedder.py` | `HashingEmbedder`：词袋固定种子随机投影，离线可复现，**只用于策略间相对比较** |
+| `eval/local_embedder.py` | `LocalEmbedder`：本地 `bge-small-zh-v1.5`（ONNX/CPU，512 维），免 key 免费用，产出可作绝对数值的语义向量 |
+| `eval/runner.py` | 检索评测：对比 `vector` / `hybrid` / `hybrid_mmr`，`--embedder offline\|local\|openai`，输出 `eval/reports/eval_report.{md,json}` |
+| `eval/online_runner.py` | 在线评测：`--suite agent`（20 条任务跑真实 Agent 循环）与 `--suite generation`（50 条查询测 groundedness），输出 `online_eval_report.{md,json}` |
 | `scripts/build_golden_dataset.py` | 由语料 + 查询推导黄金集（不手写标注） |
+
+> `eval/online_runner.py` 中的 MCP 工具只声明、由 stub 执行（真实 MCP server 需要 npx + 联网安装），
+> 因此工具选择准确率有意义，MCP 任务上的 `task_success_rate` 只反映 stub 回显。
 
 ---
 
@@ -359,7 +365,7 @@ ruff = "^0.7"
 
 ## 8. 工程化验收清单（已达成）
 
-- [x] 分层测试：`unit` / `integration` / `e2e`，234 用例全绿
+- [x] 分层测试：`unit` / `integration` / `e2e`，262 用例全绿
 - [x] Agent Loop 用 `FakeLLM` 可离线回归，覆盖率 93%
 - [x] 集成用例在真实 PostgreSQL / Qdrant 上验证通过（17 例由 skip 转 pass）
 - [x] 覆盖率 70%，新增模块普遍 ≥ 94%

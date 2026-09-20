@@ -8,14 +8,14 @@
 
 | 指标 | 结果 |
 |---|---|
-| 用例总数 | **234（234 通过 / 0 跳过 / 0 失败）** |
-| 语句覆盖率 | **70%**（2592 语句，779 未覆盖） |
-| 默认套件（无外部服务） | 216 个用例，约 5 秒 |
-| 需 PostgreSQL / Qdrant | 18 个用例，用 `pytest --run-integration` 触发，**已在真实服务上全部跑通** |
+| 用例总数 | **262（262 通过 / 0 跳过 / 0 失败）** |
+| 语句覆盖率 | **70%**（2699 语句，799 未覆盖） |
+| 默认套件（无外部服务） | 245 个通过 / 17 个跳过，约 6 秒 |
+| 需 PostgreSQL / Qdrant | 17 个用例，用 `pytest --run-integration` 触发，**已在真实服务上全部跑通** |
 | 静态检查 | 新增模块 `ruff check --select E4,E7,E9,F` 全绿 |
 
-> 上一版报告（Docker 未启动）为 211 通过 / 17 跳过 / 覆盖率 65%。
-> 本次补跑 `--run-integration` 后，**17 个跳过全部转为通过**，并在真实服务上暴露出 2 个此前离线无法发现的缺陷（见第 5 节）。
+> 演进：初版（Docker 未启动）211 通过 / 17 跳过 / 65%；接入真实服务后 234 通过 / 0 跳过 / 70%；
+> 补上混合检索的生产接线与评测指标测试后 **262 通过 / 70%**。
 
 覆盖率按模块分布（关键模块）：
 
@@ -27,6 +27,8 @@
 | `core/prompt_store.py` | 96% | Prompt 版本与 A/B 分流 |
 | `core/memory.py` | 100% | 工作记忆；长期记忆为占位实现 |
 | `rag/hybrid.py` | 100% | 混合检索、分数融合、MMR |
+| `rag/corpus_index.py` | 98% | 词法索引的滚动重建与降级 |
+| `rag/retriever.py` | 79% | 生产检索入口与混合/纯向量切换 |
 | `rag/lexical.py` | 94% | BM25 + 中英文分词 |
 | `rag/ingest.py` | 96% | 入库流水线 |
 | `observability/cost.py` | 97% | token / 成本计量 |
@@ -55,6 +57,8 @@ backend/tests/
 │   ├── test_memory.py           工作记忆
 │   ├── test_streaming.py        SSE 打包
 │   ├── test_ingest.py           入库流水线与 Retriever
+│   ├── test_retriever_wiring.py 生产混合检索链路的接线与降级
+│   ├── test_eval_metrics.py     Agent / 生成评测指标
 │   ├── test_mcp_config.py       MCP server 配置加载
 │   ├── test_errors.py           异常体系与全局处理器
 │   └── test_schemas.py          Pydantic 契约
@@ -132,6 +136,9 @@ make test-integration
 | 测试桩里 `results or [...默认值]` 会把"故意返回空列表"吞掉 | `test_agent_loop.py` | 改为 `results if results is not None else [...]` |
 | `Makefile` 的 `help` 里写了 `make test`，但没有对应规则 | `Makefile` | 补齐 `test` / `test-cov` / `test-integration` |
 | 无 CI | 工程结构 | 新增 `.github/workflows/ci.yml`：ruff → 生成黄金集 → pytest（覆盖率下限 55）→ 离线评测 → 上传报告 |
+| **混合检索没有接进生产链路** | `app/rag/retriever.py` | `retrieve()` 直接调 `QdrantStore.search()`（纯向量），`HybridRetriever` 只在 `eval/runner.py` 里被引过一次。评测报告里那些数字描述的是一条**产品从未真正跑过**的流水线 | 新增 `rag/corpus_index.py` 从 Qdrant 滚动重建 BM25 索引，`Retriever` 按 `rag_hybrid_enabled` 走混合链路且异常时退回纯向量；新增 `tests/unit/test_retriever_wiring.py` 11 个用例锁住这条接线 |
+| **Agent / 生成评测指标是死代码** | `eval/metrics/agent.py`、`generation.py` | `runner.py` 只 import 了 `evaluate_retrieval`，`agent_tasks.jsonl`（20 条）从未被加载 | 新增 `eval/online_runner.py` 跑真实 Agent 循环与生成 groundedness，两份报告落 `eval/reports/` |
+| `task_success_rate` 把"没声明 `must_contain`"算成失败 | `eval/metrics/agent.py` | 20 条任务里只有 5 条声明了断言，指标因此变成在数"多少条写了断言"，与 Agent 能力无关 | 只统计声明了断言的任务，并单独报告 `task_success_n` |
 
 ### 5.1 真实服务跑通后才暴露的缺陷
 

@@ -17,7 +17,7 @@
 | 🧪 **Prompt 工程** | 多版本管理 + 按 session 哈希的确定性 A/B 分流 |
 | 📊 **可观测性** | token/成本按模型计价并落库（`llm_usage`） |
 | 🔁 **反馈闭环** | 用户评分回流，`<4` 星自动标记坏例并导出 JSONL |
-| ✅ **测试与评测** | 234 个用例（70% 覆盖率）+ 检索评测（Recall@5 0.81 → 0.97） |
+| ✅ **测试与评测** | 262 个用例（70% 覆盖率）+ 检索评测 + Agent 轨迹评测 + 生成质量评测 |
 
 ## 🚀 快速开始
 
@@ -132,9 +132,12 @@ make test-integration  # 额外连接真实 PostgreSQL / Qdrant
 make backend-test      # 在容器内跑
 
 make golden            # 重新生成评测黄金集
-make eval              # 离线检索评测（无需外部服务）
-make eval-qdrant       # 真实 Qdrant（离线 embedding）
-make eval-real         # 真实 Qdrant + 真实 embedding（产生费用）
+make eval              # 离线检索评测（哈希向量，只能相对比较）
+make eval-semantic     # 本地语义模型 bge-small-zh（免费，可作绝对数值）
+make eval-qdrant       # 真实 Qdrant（默认仍是哈希向量）
+make eval-real         # 托管 embedding API（产生费用）
+make eval-agent        # Agent 工具选择评测（真实 LLM，产生费用）
+make eval-online       # Agent 轨迹 + 生成质量（真实 LLM，产生费用）
 ```
 
 若依赖装在虚拟环境里，加 `PY=<venv>/Scripts/python`（Windows）或 `PY=<venv>/bin/python`。
@@ -143,21 +146,28 @@ make eval-real         # 真实 Qdrant + 真实 embedding（产生费用）
 
 ```bash
 cd backend
-pytest -q                    # 216 passed（无外部服务）
-pytest -q --run-integration  # 234 passed（含真实 PG / Qdrant）
+pytest -q                    # 245 passed / 17 skipped（无外部服务）
+pytest -q --run-integration  # 262 passed（含真实 PG / Qdrant）
 ```
 
 - 分层：`unit` / `integration`（Agent Loop + PG + Qdrant）/ `e2e`
 - Agent Loop 用可编排的 `FakeLLM` 测试，不花钱、不联网
 - 覆盖率 **70%**，`core/agent.py` 93%、`rag/hybrid.py` 100%、`core/retry.py` 99%
 
-检索评测（12 篇语料 / 29 块 / 50 条查询，top_k=5）：
+检索评测（12 篇语料 / 29 块 / 50 条查询，top_k=5），语义向量 bge-small-zh-v1.5：
 
 | 策略 | recall@5 | MRR | nDCG@5 |
 |---|---|---|---|
-| 纯向量（基线） | 0.8100 | 0.6673 | 0.6973 |
-| 混合检索 | 0.9500 | 0.8047 | 0.8405 |
-| 混合 + MMR | **0.9700** | **0.8053** | **0.8415** |
+| 纯向量（基线） | 0.9300 | 0.8473 | 0.8635 |
+| 混合检索 | **0.9700** | **0.9083** | **0.9200** |
+| 混合 + MMR | **0.9700** | **0.9083** | **0.9200** |
+
+Recall@5 +4.3%，MRR +7.2%。同一份黄金集用哈希向量跑是 0.81 → 0.97（+19.8%），
+但那组放大了优化幅度——哈希向量没有语义，把基线压低了。**对外请用上面这组。**
+
+Agent 评测（20 条任务，deepseek-flash）：工具选择准确率 0.6792、完全匹配 0.45，
+并暴露出模型倾向于冗余调用工具（单任务最多触发 6 次调用打满迭代上限）。
+生成质量（50 条）：`lexical_support` 0.8011、`citation_rate` 0.9800。
 
 详见 [`docs/testing-report.md`](docs/testing-report.md) 与 [`docs/eval-guide.md`](docs/eval-guide.md)。
 

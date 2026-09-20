@@ -15,7 +15,7 @@ import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from app.config import settings
 from app.core.context import ContextBuilder, summarize_messages
@@ -343,6 +343,20 @@ class Agent:
             }
             working_messages.append(assistant_msg)
 
+            # Persist the assistant turn that requested tools. Without this the
+            # tool trajectory exists only in memory, so reloading a session loses
+            # every tool card and the model loses its own tool-call history.
+            if self.deps.save_message and self.deps.session_id:
+                try:
+                    await self.deps.save_message(
+                        session_id=self.deps.session_id,
+                        role="assistant",
+                        content=accumulated_content or None,
+                        tool_calls=assistant_msg["tool_calls"],
+                    )
+                except Exception as e:
+                    logger.warning("save_message_failed", error=str(e))
+
             # Execute all tool calls in parallel
             results = await asyncio.gather(
                 *[self._execute_tool_call(tc) for tc in tool_calls],
@@ -357,6 +371,17 @@ class Agent:
                     "name": r["name"],
                     "content": r["content"],
                 })
+                if self.deps.save_message and self.deps.session_id:
+                    try:
+                        await self.deps.save_message(
+                            session_id=self.deps.session_id,
+                            role="tool",
+                            content=r["content"],
+                            tool_call_id=r["tool_call_id"],
+                            name=r["name"],
+                        )
+                    except Exception as e:
+                        logger.warning("save_message_failed", error=str(e))
                 yield AgentEvent(type="tool_call_result", data=r)
 
             # Check context overflow and summarize if needed
@@ -378,7 +403,18 @@ class Agent:
                         summary=summary + ("\n" + new_summary if summary else new_summary),
                     )
 
-        # Max iterations reached
+        # Max iterations reached: keep whatever text the model already produced,
+        # otherwise a run that exhausts its budget leaves no trace in the session.
+        if accumulated_content and self.deps.save_message and self.deps.session_id:
+            try:
+                await self.deps.save_message(
+                    session_id=self.deps.session_id,
+                    role="assistant",
+                    content=accumulated_content,
+                )
+            except Exception as e:
+                logger.warning("save_message_failed", error=str(e))
+
         yield AgentEvent(type="done", data={
             "finish_reason": "max_iterations",
             "content": accumulated_content,

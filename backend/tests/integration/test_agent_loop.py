@@ -7,6 +7,7 @@ of the normal suite - no ``--run-integration`` needed.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -217,6 +218,95 @@ async def test_persistence_callbacks_are_invoked():
     assert saved_tools[0]["name"] == "rag_search"
     assert saved_tools[0]["session_id"] == session_id
     assert saved_tools[0]["status"] == "ok"
+
+
+async def test_tool_trajectory_is_persisted_not_just_kept_in_memory():
+    """A tool round must be written to storage, not only to working messages.
+
+    Regression: the loop appended assistant(tool_calls) / tool turns to the
+    in-memory context without saving them, so reopening a session showed no
+    tool cards and the model could not see its own earlier tool calls.
+    """
+    saved: list[dict] = []
+
+    async def save_message(**kwargs):
+        saved.append(kwargs)
+
+    llm = FakeLLM(
+        script=[
+            tool_step("rag_search", {"query": "熔断器"}, call_id="call_a"),
+            content_step("最终答案"),
+        ]
+    )
+    deps = AgentDeps(
+        retriever=StubRetriever(),
+        session_id=uuid.uuid4(),
+        save_message=save_message,
+    )
+
+    await collect(Agent(llm=llm, deps=deps), [{"role": "user", "content": "熔断器"}])
+
+    assert [m["role"] for m in saved] == ["assistant", "tool", "assistant"]
+    # The tool-call turn carries no text, and it must keep the provider shape so
+    # the stored row can be replayed to the model verbatim.
+    assert saved[0]["content"] is None
+    requested = saved[0]["tool_calls"]
+    assert requested[0]["type"] == "function"
+    assert requested[0]["function"]["name"] == "rag_search"
+    assert json.loads(requested[0]["function"]["arguments"]) == {"query": "熔断器"}
+    # The result row links back to the request by id and keeps the tool name.
+    assert saved[1]["tool_call_id"] == "call_a"
+    assert saved[1]["name"] == "rag_search"
+    assert "检索片段A" in saved[1]["content"]
+
+
+async def test_parallel_tool_calls_each_get_their_own_saved_result():
+    saved: list[dict] = []
+
+    async def save_message(**kwargs):
+        saved.append(kwargs)
+
+    llm = FakeLLM(
+        script=[
+            {
+                "tool_calls": [
+                    {"id": "c1", "name": "rag_search", "arguments": {"query": "a"}},
+                    {"id": "c2", "name": "rag_search", "arguments": {"query": "b"}},
+                ]
+            },
+            content_step("done"),
+        ]
+    )
+    deps = AgentDeps(
+        retriever=StubRetriever(),
+        session_id=uuid.uuid4(),
+        save_message=save_message,
+    )
+
+    await collect(Agent(llm=llm, deps=deps), [{"role": "user", "content": "q"}])
+
+    assert [m["role"] for m in saved] == ["assistant", "tool", "tool", "assistant"]
+    assert len(saved[0]["tool_calls"]) == 2
+    assert [m["tool_call_id"] for m in saved[1:3]] == ["c1", "c2"]
+
+
+async def test_persistence_failure_does_not_take_the_answer_down():
+    """A broken store must degrade to "conversation still works", not an error.
+
+    Persistence now happens at several points in the tool round, so each write
+    is individually guarded.
+    """
+
+    async def boom(**_):
+        raise RuntimeError("database is down")
+
+    llm = FakeLLM(script=[tool_step("rag_search", {"query": "x"}), content_step("仍然回答")])
+    deps = AgentDeps(retriever=StubRetriever(), session_id=uuid.uuid4(), save_message=boom)
+
+    events = await collect(Agent(llm=llm, deps=deps), [{"role": "user", "content": "x"}])
+
+    assert types(events)[-1] == "done"
+    assert events[-1].data["content"] == "仍然回答"
 
 
 async def test_summarization_triggers_when_over_budget():

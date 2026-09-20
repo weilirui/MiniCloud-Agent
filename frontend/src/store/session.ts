@@ -63,20 +63,32 @@ export const useSessionStore = create<SessionState>((set) => ({
   selectSession: async (id) => {
     const { getSession } = await import('../api/sessions');
     const detail = await getSession(id);
+    // Tool results are persisted as their own role="tool" rows. Fold them back
+    // into the matching card so a reloaded session looks identical to the live
+    // stream instead of showing bare "tool" bubbles.
+    const toolResults = new Map<string, string>();
+    for (const m of detail.messages) {
+      if (m.role === 'tool' && m.tool_call_id) {
+        toolResults.set(m.tool_call_id, m.content || '');
+      }
+    }
     set({
       currentSessionId: id,
-      messages: detail.messages.map((m: MessageOut) => ({
-        id: m.id,
-        role: m.role as any,
-        content: m.content || '',
-        tool_calls: m.tool_calls?.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.arguments,
-          status: 'ok' as const,
+      messages: detail.messages
+        .filter((m) => m.role !== 'tool')
+        .map((m: MessageOut) => ({
+          id: m.id,
+          role: m.role as any,
+          content: m.content || '',
+          tool_calls: m.tool_calls?.map((tc) => ({
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments,
+            result: toolResults.get(tc.id),
+            status: 'ok' as const,
+          })),
+          created_at: m.created_at,
         })),
-        created_at: m.created_at,
-      })),
     });
   },
 

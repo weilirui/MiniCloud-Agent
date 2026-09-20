@@ -17,6 +17,7 @@ export interface MessageOut {
   content: string | null;
   tool_calls?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
   tool_call_id?: string;
+  name?: string | null;
   created_at: string;
 }
 

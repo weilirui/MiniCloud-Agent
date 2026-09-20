@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import os
 import platform
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends
@@ -70,9 +69,13 @@ async def _load_history(db: AsyncSession, session_id: UUID) -> list[dict]:
     rows = result.scalars().all()
     out = []
     for m in rows:
-        msg = {"role": m.role, "content": m.content or ""}
+        msg: dict = {"role": m.role, "content": m.content or ""}
         if m.tool_calls:
             msg["tool_calls"] = m.tool_calls
+            # An assistant turn that only requests tools has no text; keep it
+            # null so the provider receives a well-formed tool_calls message.
+            if not m.content:
+                msg["content"] = None
         if m.tool_call_id:
             msg["tool_call_id"] = m.tool_call_id
         if m.name:
@@ -133,8 +136,23 @@ async def _save_tool_invocation(
 def _build_agent(session_id: UUID, db: AsyncSession) -> Agent:
     """Build an Agent wired with all dependencies."""
 
-    async def save_msg(role: str, content: str, **_):
-        await _save_message(db, session_id, role, content)
+    async def save_msg(
+        role: str,
+        content: str | None,
+        tool_calls: list[dict] | None = None,
+        tool_call_id: str | None = None,
+        name: str | None = None,
+        **_,
+    ):
+        await _save_message(
+            db,
+            session_id,
+            role,
+            content,
+            tool_calls=tool_calls,
+            tool_call_id=tool_call_id,
+            name=name,
+        )
 
     async def save_inv(**kwargs):
         kwargs.pop("session_id", None)  # agent passes it in kwargs too; closure value is authoritative

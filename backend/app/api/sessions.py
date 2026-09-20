@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +21,32 @@ from app.schemas.session import (
 router = APIRouter()
 
 
+def _flatten_tool_calls(raw: list[dict] | None) -> list[dict] | None:
+    """Convert stored OpenAI-style tool_calls into the flat shape the UI draws.
+
+    Storage keeps the provider format (``{"id", "type", "function": {...}}``) so
+    ``_load_history`` can replay it to the model verbatim; the UI only needs
+    ``id / name / arguments``.
+    """
+    if not raw:
+        return None
+    out: list[dict] = []
+    for tc in raw:
+        fn = tc.get("function") or {}
+        args: object = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except ValueError:
+                args = {"_raw": args}
+        out.append({
+            "id": tc.get("id"),
+            "name": fn.get("name") or tc.get("name"),
+            "arguments": args if isinstance(args, dict) else {},
+        })
+    return out
+
+
 @router.get("/")
 async def list_sessions(
     limit: int = 50,
@@ -33,8 +60,14 @@ async def list_sessions(
     q = sa_select(Session).order_by(Session.updated_at.desc()).limit(limit).offset(offset)
     rows = (await db.execute(q)).scalars().all()
 
-    # get message counts
-    msg_count_q = sa_select(Message.session_id, sa_func.count(Message.id)).group_by(Message.session_id)
+    # Count conversational turns only: role="tool" rows are the raw results
+    # folded into the assistant's tool cards, and counting them would make the
+    # sidebar disagree with the message count the UI shows for the same session.
+    msg_count_q = (
+        sa_select(Message.session_id, sa_func.count(Message.id))
+        .where(Message.role != "tool")
+        .group_by(Message.session_id)
+    )
     msg_counts = {
         sid: cnt for sid, cnt in (await db.execute(msg_count_q)).all()
     }
@@ -99,14 +132,15 @@ async def get_session(
         model=s.model,
         created_at=s.created_at,
         updated_at=s.updated_at,
-        message_count=len(msgs),
+        # Same convention as list_sessions: displayable turns, not raw tool rows.
+        message_count=sum(1 for m in msgs if m.role != "tool"),
         system_prompt=s.system_prompt,
         messages=[
             MessageOut(
                 id=m.id,
                 role=m.role,
                 content=m.content,
-                tool_calls=m.tool_calls,
+                tool_calls=_flatten_tool_calls(m.tool_calls),
                 tool_call_id=m.tool_call_id,
                 name=m.name,
                 created_at=m.created_at,
